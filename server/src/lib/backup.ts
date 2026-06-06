@@ -3,6 +3,7 @@ import { mkdirSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { env } from '../config/env';
 import { prisma } from './prisma';
+import { ApiError } from '../middleware/error';
 
 export interface BackupResult {
   filename: string;
@@ -17,6 +18,9 @@ function timestamp(): string {
 // Creates a timestamped SQL dump in BACKUP_DIR and records it in the Backup table.
 // Tries a local `pg_dump`, then falls back to the docker-compose container.
 export async function runBackup(createdById?: string | null): Promise<BackupResult> {
+  if (process.env.VERCEL) {
+    throw new ApiError(400, 'Manual backups are not available in the cloud — Supabase backs up your database automatically.');
+  }
   const backupDir = path.resolve(process.cwd(), env.backupDir);
   if (!existsSync(backupDir)) mkdirSync(backupDir, { recursive: true });
   const filename = `rlr-backup-${timestamp()}.sql`;

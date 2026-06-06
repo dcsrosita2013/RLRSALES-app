@@ -1,30 +1,9 @@
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
+import { app } from './app';
 import { env } from './config/env';
-import apiRoutes from './routes';
-import { errorHandler, notFound } from './middleware/error';
 import { runBackup } from './lib/backup';
 
-const app = express();
-
-app.use(helmet());
-app.use(cors({ origin: env.clientUrl, credentials: true }));
-app.use(express.json({ limit: '2mb' }));
-
-if (env.nodeEnv === 'development') {
-  app.use((req, _res, next) => {
-    // eslint-disable-next-line no-console
-    console.log(`${req.method} ${req.originalUrl}`);
-    next();
-  });
-}
-
-app.use('/api', apiRoutes);
-
-app.use(notFound);
-app.use(errorHandler);
-
+// Local / self-hosted entry point. On Vercel the app is served by api/index.ts
+// (serverless), so this file's listen() + scheduled backup do not run there.
 app.listen(env.port, () => {
   // eslint-disable-next-line no-console
   console.log(`RLR API running on http://localhost:${env.port} (${env.nodeEnv})`);

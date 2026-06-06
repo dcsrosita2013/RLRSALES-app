@@ -2,12 +2,17 @@
 // PostgreSQL + Prisma. Covers all MVP modules so later phases need no re-architecture.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" for local dev; rhel target for the Vercel serverless runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Pooled connection (Supabase transaction pooler) used at runtime.
+  url       = env("DATABASE_URL")
+  // Direct connection (port 5432) used by Prisma Migrate. Falls back to DATABASE_URL locally.
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================================
