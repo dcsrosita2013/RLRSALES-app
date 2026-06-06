@@ -1,0 +1,551 @@
+// RLR Sales and Services Corporation — database schema
+// PostgreSQL + Prisma. Covers all MVP modules so later phases need no re-architecture.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum Role {
+  ADMIN // Owner — full access
+  AGENT // Sales
+  WAREHOUSE
+  FINANCE // Collections / Finance
+}
+
+enum VatClass {
+  VAT // 12% VATable; 12% added only when addVat is on
+  VAT_ADD // always add 12% VAT on top (VAT-exclusive)
+  ZERO_RATED
+  VAT_EXEMPT
+}
+
+enum Floor {
+  FIRST
+  SECOND
+}
+
+enum TermsType {
+  COD
+  NET // pair with netDays
+}
+
+enum DocType {
+  INVOICE
+  DELIVERY_RECEIPT
+  PURCHASE_ORDER
+  CHECK_VOUCHER
+  QUOTATION
+  COLLECTION
+}
+
+enum InvoiceStatus {
+  DRAFT
+  FINALIZED
+  VOID
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum PaymentMethod {
+  CASH
+  CHECK
+  BANK_TRANSFER
+}
+
+enum MovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum POApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ============================================================
+// Auth & audit
+// ============================================================
+
+model User {
+  id                 String   @id @default(cuid())
+  username           String   @unique
+  passwordHash       String
+  fullName           String
+  role               Role
+  isActive           Boolean  @default(true)
+  mustChangePassword Boolean  @default(true)
+  agentId            String?
+  agent              Agent?   @relation(fields: [agentId], references: [id])
+  lastLoginAt        DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  auditLogs          AuditLog[]
+  invoicesCreated    SalesInvoice[]    @relation("InvoiceCreatedBy")
+  drsCreated         DeliveryReceipt[] @relation("DRCreatedBy")
+  posCreated         PurchaseOrder[]   @relation("POCreatedBy")
+  posApproved        PurchaseOrder[]   @relation("POApprovedBy")
+  quotationsCreated  Quotation[]       @relation("QuotationCreatedBy")
+  collectionsCreated Collection[]      @relation("CollectionCreatedBy")
+  vouchersCreated    CheckVoucher[]    @relation("CVCreatedBy")
+  supplierPayments   SupplierPayment[] @relation("SupPayCreatedBy")
+  backups            Backup[]
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  username   String? // snapshot in case user is later renamed/removed
+  action     String // LOGIN, CREATE, UPDATE, FINALIZE, VOID, MARK_PAID, MARK_UNPAID, RECEIVE, BACKUP...
+  entityType String // SalesInvoice, PurchaseOrder, User, ...
+  entityId   String?
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Auto-incrementing document numbers with configurable prefix + start.
+model DocumentSequence {
+  id         String   @id @default(cuid())
+  docType    DocType  @unique
+  prefix     String
+  nextNumber Int      @default(1)
+  padding    Int      @default(5)
+  updatedAt  DateTime @updatedAt
+}
+
+// ============================================================
+// Master data
+// ============================================================
+
+model Agent {
+  id            String   @id @default(cuid())
+  name          String
+  address       String?
+  contactNumber String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users            User[]
+  customers        Customer[]
+  invoices         SalesInvoice[]
+  deliveryReceipts DeliveryReceipt[]
+  quotations       Quotation[]
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Brand {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  brandId     String?
+  brand       Brand?    @relation(fields: [brandId], references: [id])
+  unit        String    @default("pc")
+  costPrice   Decimal   @default(0) @db.Decimal(14, 2)
+  basePrice   Decimal   @default(0) @db.Decimal(14, 2) // default selling price; +25/30/35% computed from cost
+  origin      String    @default("Philippines") // sourcing country, drives commission rules (e.g. China)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  stocks         StockLocation[]
+  movements      ProductMovement[]
+  invoiceItems   SalesInvoiceItem[]
+  drItems        DeliveryReceiptItem[]
+  poItems        PurchaseOrderItem[]
+  quotationItems QuotationItem[]
+}
+
+// One row per (product, floor, room) — supports the same item in multiple locations.
+model StockLocation {
+  id         String   @id @default(cuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  floor      Floor
+  roomNumber String
+  quantity   Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  movements ProductMovement[]
+
+  @@unique([productId, floor, roomNumber])
+}
+
+// Product ledger — every stock in/out for running balance reporting.
+model ProductMovement {
+  id              String         @id @default(cuid())
+  productId       String
+  product         Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stockLocationId String?
+  stockLocation   StockLocation? @relation(fields: [stockLocationId], references: [id])
+  type            MovementType
+  quantity        Decimal        @db.Decimal(14, 2) // positive magnitude; `type` gives direction
+  unitValue       Decimal?       @db.Decimal(14, 2) // frozen unit price at time of movement: cost for IN, sell for OUT
+  refType         String? // SalesInvoice, PurchaseOrder, Adjustment
+  refId           String?
+  refNumber       String?
+  note            String?
+  createdById     String?
+  createdAt       DateTime       @default(now())
+
+  @@index([productId, createdAt])
+}
+
+model Customer {
+  id            String    @id @default(cuid())
+  name          String
+  address       String?
+  tin           String?
+  contactNumber String?
+  vatClass      VatClass  @default(VAT)
+  termsType     TermsType @default(COD)
+  netDays       Int?
+  commissionable Boolean  @default(false) // sales to this customer earn agent commission only when true
+  agentId       String?
+  agent         Agent?   @relation(fields: [agentId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  invoices         SalesInvoice[]
+  deliveryReceipts DeliveryReceipt[]
+  quotations       Quotation[]
+  collections      Collection[]
+}
+
+model Supplier {
+  id            String    @id @default(cuid())
+  name          String
+  address       String?
+  tin           String?
+  contactNumber String?
+  termsType     TermsType @default(COD)
+  netDays       Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  purchaseOrders   PurchaseOrder[]
+  supplierPayments SupplierPayment[]
+  checkVouchers    CheckVoucher[]
+}
+
+// ============================================================
+// Sales Invoice
+// ============================================================
+
+model SalesInvoice {
+  id             String        @id @default(cuid())
+  number         String?       @unique // assigned on finalize so drafts don't consume official numbers
+  date           DateTime      @default(now())
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  customerName   String // snapshot
+  customerTin    String?
+  vatClass       VatClass
+  termsType      TermsType     @default(COD)
+  netDays        Int?
+  poNumber       String?
+  agentId        String?
+  agent          Agent?        @relation(fields: [agentId], references: [id])
+
+  addVat         Boolean       @default(true)
+  subtotal       Decimal       @default(0) @db.Decimal(14, 2) // sum of line totals before discount
+  discount       Decimal       @default(0) @db.Decimal(14, 2)
+  vatableSales   Decimal       @default(0) @db.Decimal(14, 2)
+  vatExemptSales Decimal       @default(0) @db.Decimal(14, 2)
+  zeroRatedSales Decimal       @default(0) @db.Decimal(14, 2)
+  vatAmount      Decimal       @default(0) @db.Decimal(14, 2)
+  total          Decimal       @default(0) @db.Decimal(14, 2)
+  totalCost      Decimal       @default(0) @db.Decimal(14, 2) // for profit reporting
+
+  status         InvoiceStatus @default(DRAFT)
+  paymentStatus  PaymentStatus @default(UNPAID)
+  amountPaid     Decimal       @default(0) @db.Decimal(14, 2)
+
+  createdById    String?
+  createdBy      User?         @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  finalizedAt    DateTime?
+  voidedAt       DateTime?
+  paidAt         DateTime?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  items            SalesInvoiceItem[]
+  deliveryReceipts DeliveryReceipt[]
+  collections      Collection[]
+
+  @@index([date])
+  @@index([customerId])
+  @@index([status])
+  @@index([paymentStatus])
+}
+
+model SalesInvoiceItem {
+  id          String       @id @default(cuid())
+  invoiceId   String
+  invoice     SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?     @relation(fields: [productId], references: [id])
+  description String
+  qty         Decimal      @db.Decimal(14, 2)
+  unit        String
+  unitPrice   Decimal      @db.Decimal(14, 2)
+  unitCost    Decimal      @default(0) @db.Decimal(14, 2)
+  lineTotal   Decimal      @db.Decimal(14, 2)
+}
+
+// ============================================================
+// Delivery Receipt
+// ============================================================
+
+model DeliveryReceipt {
+  id           String        @id @default(cuid())
+  number       String        @unique
+  date         DateTime      @default(now())
+  poNumber     String?
+  customerId   String
+  customer     Customer      @relation(fields: [customerId], references: [id])
+  customerName String
+  agentId      String?
+  agent        Agent?        @relation(fields: [agentId], references: [id])
+  termsType    TermsType     @default(COD)
+  netDays      Int?
+  invoiceId    String?
+  invoice      SalesInvoice? @relation(fields: [invoiceId], references: [id])
+  notes        String?
+  createdById  String?
+  createdBy    User?         @relation("DRCreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  items DeliveryReceiptItem[]
+
+  @@index([date])
+}
+
+model DeliveryReceiptItem {
+  id          String          @id @default(cuid())
+  drId        String
+  dr          DeliveryReceipt @relation(fields: [drId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?        @relation(fields: [productId], references: [id])
+  description String
+  qty         Decimal         @db.Decimal(14, 2)
+  unit        String
+}
+
+// ============================================================
+// Purchase Order
+// ============================================================
+
+model PurchaseOrder {
+  id            String        @id @default(cuid())
+  number        String        @unique
+  supplierId    String
+  supplier      Supplier      @relation(fields: [supplierId], references: [id])
+  supplierName  String
+  invoiceDate   DateTime      @default(now())
+  termsType     TermsType     @default(COD)
+  netDays       Int?
+  notes         String?
+  subtotal      Decimal       @default(0) @db.Decimal(14, 2)
+  total         Decimal       @default(0) @db.Decimal(14, 2)
+  paymentStatus PaymentStatus @default(UNPAID)
+  amountPaid    Decimal       @default(0) @db.Decimal(14, 2)
+  paidAt        DateTime?
+  received      Boolean       @default(false)
+  receivedAt    DateTime?
+
+  // Admin-only approval workflow
+  approvalStatus  POApprovalStatus @default(PENDING)
+  approvedById    String?
+  approvedBy      User?            @relation("POApprovedBy", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  rejectionReason String?
+
+  createdById   String?
+  createdBy     User?         @relation("POCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items            PurchaseOrderItem[]
+  supplierPayments SupplierPayment[]
+
+  @@index([invoiceDate])
+  @@index([supplierId])
+  @@index([paymentStatus])
+}
+
+model PurchaseOrderItem {
+  id          String        @id @default(cuid())
+  poId        String
+  po          PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?      @relation(fields: [productId], references: [id])
+  description String
+  qty         Decimal       @db.Decimal(14, 2)
+  unit        String
+  unitCost    Decimal       @db.Decimal(14, 2)
+  lineTotal   Decimal       @db.Decimal(14, 2)
+  floor       Floor? // target receiving location
+  roomNumber  String?
+}
+
+// ============================================================
+// Quotation
+// ============================================================
+
+model Quotation {
+  id                 String    @id @default(cuid())
+  number             String    @unique
+  date               DateTime  @default(now())
+  customerId         String
+  customer           Customer  @relation(fields: [customerId], references: [id])
+  customerName       String
+  agentId            String?
+  agent              Agent?    @relation(fields: [agentId], references: [id])
+  validUntil         DateTime?
+  notes              String?
+  subtotal           Decimal   @default(0) @db.Decimal(14, 2)
+  total              Decimal   @default(0) @db.Decimal(14, 2)
+  convertedInvoiceId String? // set when converted to a Sales Invoice
+  createdById        String?
+  createdBy          User?     @relation("QuotationCreatedBy", fields: [createdById], references: [id])
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  items QuotationItem[]
+
+  @@index([date])
+}
+
+model QuotationItem {
+  id           String    @id @default(cuid())
+  quotationId  String
+  quotation    Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  productId    String?
+  product      Product?  @relation(fields: [productId], references: [id])
+  description  String
+  qty          Decimal   @db.Decimal(14, 2)
+  unit         String
+  markupOption String? // "25" | "30" | "35" | "CUSTOM"
+  unitPrice    Decimal   @db.Decimal(14, 2)
+  lineTotal    Decimal   @db.Decimal(14, 2)
+}
+
+// ============================================================
+// Collections (money in) & payments out
+// ============================================================
+
+model Collection {
+  id          String        @id @default(cuid())
+  number      String        @unique
+  date        DateTime      @default(now())
+  customerId  String
+  customer    Customer      @relation(fields: [customerId], references: [id])
+  invoiceId   String?
+  invoice     SalesInvoice? @relation(fields: [invoiceId], references: [id])
+  amount      Decimal       @db.Decimal(14, 2)
+  method      PaymentMethod @default(CASH)
+  checkNumber String?
+  checkBank   String?
+  checkDate   DateTime?
+  bankRef     String?
+  notes       String?
+  createdById String?
+  createdBy   User?         @relation("CollectionCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime      @default(now())
+
+  @@index([date])
+  @@index([customerId])
+}
+
+model CheckVoucher {
+  id          String     @id @default(cuid())
+  number      String     @unique
+  date        DateTime   @default(now())
+  payee       String
+  bank        String?
+  checkNumber String?
+  checkDate   DateTime?
+  termsType   TermsType?
+  amount      Decimal    @db.Decimal(14, 2)
+  purpose     String?
+  supplierId  String?
+  supplier    Supplier?  @relation(fields: [supplierId], references: [id])
+  createdById String?
+  createdBy   User?      @relation("CVCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime   @default(now())
+
+  supplierPayments SupplierPayment[]
+
+  @@index([date])
+}
+
+model SupplierPayment {
+  id             String         @id @default(cuid())
+  date           DateTime       @default(now())
+  supplierId     String?
+  supplier       Supplier?      @relation(fields: [supplierId], references: [id])
+  poId           String?
+  po             PurchaseOrder? @relation(fields: [poId], references: [id])
+  checkVoucherId String?
+  checkVoucher   CheckVoucher?  @relation(fields: [checkVoucherId], references: [id])
+  amount         Decimal        @db.Decimal(14, 2)
+  method         PaymentMethod  @default(CASH)
+  notes          String?
+  createdById    String?
+  createdBy      User?          @relation("SupPayCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime       @default(now())
+
+  @@index([date])
+}
+
+// ============================================================
+// Backups
+// ============================================================
+
+model Backup {
+  id          String   @id @default(cuid())
+  filename    String
+  sizeBytes   Int?
+  note        String?
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+}
