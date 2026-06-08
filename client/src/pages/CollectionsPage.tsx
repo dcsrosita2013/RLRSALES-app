@@ -1,6 +1,6 @@
 import { useState, useMemo, FormEvent } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Wallet, Trash2 } from 'lucide-react';
+import { Plus, Wallet, Trash2, FileSpreadsheet } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -12,9 +12,11 @@ import { Modal } from '../components/ui/Modal';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useList } from '../hooks/useList';
-import { CollectionsApi, CollectionInput, CustomersApi, InvoicesApi } from '../lib/resources';
+import { CollectionsApi, CollectionInput, CustomersApi, InvoicesApi, ReportsApi } from '../lib/resources';
 import { apiErrorMessage } from '../lib/api';
 import { peso, formatDate } from '../lib/format';
+import { downloadBlob } from '../lib/invoice';
+import { useAuth } from '../context/AuthContext';
 import type { CollectionSummary, Customer, InvoiceSummary, PaymentMethod } from '../lib/types';
 import { PAYMENT_METHOD_LABEL } from '../lib/types';
 
@@ -25,11 +27,21 @@ export function CollectionsPage() {
   const { data: customers } = useList<Customer>(() => CustomersApi.list(), []);
   const { data: invoices } = useList<InvoiceSummary>(() => InvoicesApi.list(), []);
 
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [recording, setRecording] = useState(false);
   const [toDelete, setToDelete] = useState<CollectionSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const total = rows.reduce((s, r) => s + r.amount, 0);
+
+  async function exportExcel() {
+    try {
+      downloadBlob(await ReportsApi.excel('collections', { dateFrom, dateTo }), 'collections.xlsx');
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    }
+  }
 
   async function handleDelete() {
     if (!toDelete) return;
@@ -56,11 +68,12 @@ export function CollectionsPage() {
     {
       header: '',
       className: 'text-right',
-      cell: (r) => (
-        <button onClick={() => setToDelete(r)} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label="Delete">
-          <Trash2 className="h-4 w-4" />
-        </button>
-      ),
+      cell: (r) =>
+        isAdmin ? (
+          <button onClick={() => setToDelete(r)} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label="Delete">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : null,
     },
   ];
 
@@ -70,9 +83,14 @@ export function CollectionsPage() {
         title="Collections"
         subtitle="Customer payments received"
         actions={
-          <Button onClick={() => setRecording(true)}>
-            <Plus className="h-4 w-4" /> Record collection
-          </Button>
+          <>
+            <Button variant="secondary" onClick={exportExcel}>
+              <FileSpreadsheet className="h-4 w-4" /> Export Excel
+            </Button>
+            <Button onClick={() => setRecording(true)}>
+              <Plus className="h-4 w-4" /> Record collection
+            </Button>
+          </>
         }
       />
 

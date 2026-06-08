@@ -139,16 +139,20 @@ export async function collectionsReport(f: ReportFilters): Promise<ReportResult>
     customer: c.customer?.name ?? '',
     invoice: c.invoice?.number ?? '—',
     method: c.method,
+    checkNumber: c.checkNumber ?? '', // blank unless it's a check payment
+    checkDate: c.checkDate ? day(c.checkDate) : '',
     amount: toNum(c.amount),
   }));
   return {
     title: 'Collections',
     columns: [
-      { key: 'number', label: 'Receipt #' },
+      { key: 'number', label: 'OR / Receipt #' },
       { key: 'date', label: 'Date' },
       { key: 'customer', label: 'Customer' },
       { key: 'invoice', label: 'Invoice' },
       { key: 'method', label: 'Method' },
+      { key: 'checkNumber', label: 'Check #' },
+      { key: 'checkDate', label: 'Check Date' },
       { key: 'amount', label: 'Amount', money: true },
     ],
     rows,

@@ -53,7 +53,8 @@ router.post('/', MANAGE, asyncHandler(async (req, res) => {
   res.status(201).json(await svc.createCollection(schema.parse(req.body), actor(req)));
 }));
 
-router.delete('/:id', MANAGE, asyncHandler(async (req, res) => {
+// Deleting a recorded payment is Admin-only (safety — Finance can record but not delete).
+router.delete('/:id', requireRole('ADMIN'), asyncHandler(async (req, res) => {
   res.json(await svc.deleteCollection(req.params.id, actor(req)));
 }));
 
