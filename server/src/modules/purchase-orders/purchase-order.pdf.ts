@@ -7,15 +7,24 @@ import type { serializePO } from './purchase-orders.service';
 
 type PO = ReturnType<typeof serializePO>;
 
-const NAVY = '#1e3a5f';
+const BLUE = '#2f6cb0'; // header bars + table header (matches the printed letterhead)
+const DARK = '#111111';
 const GRAY = '#6b7280';
-const LIGHT = '#e5e7eb';
+const LINE = '#9ca3af'; // table grid lines
 
 const amount = (n: number) => n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const money = (n: number) => `PHP ${amount(n)}`;
+const qtyText = (n: number) => (Number.isInteger(n) ? String(n) : amount(n));
 
-function termsText(po: PO) {
-  return po.termsType === 'NET' ? `Net ${po.netDays ?? ''} days` : 'COD';
+function termsText(po: PO): string {
+  if (po.termsType === 'NET') return `${po.netDays ?? ''} days`.trim();
+  return 'COD';
+}
+
+interface Col {
+  label: string;
+  x: number;
+  w: number;
+  align: 'left' | 'center' | 'right';
 }
 
 export function streamPOPdf(po: PO, res: Response) {
@@ -23,96 +32,171 @@ export function streamPOPdf(po: PO, res: Response) {
   doc.pipe(res);
   const left = 50;
   const right = 545;
+  const width = right - left; // 495
   const company = env.company;
 
+  // ---------------- Header: logo (left) + company details (centered) ----------------
   const logoPath = company.logoPath ? path.resolve(process.cwd(), company.logoPath) : '';
-  let textX = left;
   if (logoPath && fs.existsSync(logoPath)) {
     try {
-      doc.image(logoPath, left, 45, { fit: [60, 60] });
-      textX = left + 72;
+      doc.image(logoPath, left, 38, { fit: [72, 72] });
     } catch {
-      /* ignore */
+      /* ignore bad logo */
     }
   }
-  doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(15).text(company.name, textX, 48, { width: 320 });
-  doc.font('Helvetica').fontSize(8.5).fillColor(GRAY);
-  let cy = doc.y + 1;
-  for (const line of [company.address, company.tin ? `TIN: ${company.tin}` : '', [company.phone, company.email].filter(Boolean).join('  |  ')].filter(Boolean)) {
-    doc.text(line, textX, cy, { width: 320 });
-    cy = doc.y;
-  }
-  const headerBottom = Math.max(cy, 110);
+  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(17).text(company.name, left, 44, { width, align: 'center' });
+  doc.font('Helvetica').fontSize(9).fillColor(DARK);
+  if (company.address) doc.text(company.address, left, doc.y + 1, { width, align: 'center' });
+  if (company.telephone) doc.text(`Telephone Nos: ${company.telephone}`, left, doc.y, { width, align: 'center' });
+  if (company.mobile) doc.text(`Mobile Nos: ${company.mobile}`, left, doc.y, { width, align: 'center' });
 
-  doc.fillColor(NAVY).font('Helvetica-Bold').fontSize(18).text('PURCHASE ORDER', 330, 48, { width: 215, align: 'right' });
-  doc.font('Helvetica').fontSize(9).fillColor('#111');
-  doc.text(`PO No:  ${po.number}`, 330, 74, { width: 215, align: 'right' });
-  doc.text(`Date:  ${new Date(po.invoiceDate).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}`, 330, doc.y, { width: 215, align: 'right' });
-  doc.text(`Terms:  ${termsText(po)}`, 330, doc.y, { width: 215, align: 'right' });
-  doc.text(`Approval:  ${po.approvalStatus}`, 330, doc.y, { width: 215, align: 'right' });
+  // ---------------- Title + meta (right side) ----------------
+  const titleY = doc.y + 20;
+  const metaX = 320;
+  const metaW = right - metaX;
+  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(20).text('PURCHASE ORDER', metaX, titleY, { width: metaW });
+  doc.font('Helvetica').fontSize(10).fillColor(DARK);
+  const my = doc.y + 4;
+  const dateStr = new Date(po.invoiceDate).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+  doc.text(`Date: ${dateStr}`, metaX, my, { width: metaW });
+  doc.text(`P.O. Number: ${po.number}`, metaX, doc.y, { width: metaW });
+  doc.text(`Payment Terms: ${termsText(po)}`, metaX, doc.y, { width: metaW });
 
-  doc.moveTo(left, headerBottom + 8).lineTo(right, headerBottom + 8).strokeColor(LIGHT).stroke();
+  // ---------------- VENDOR / SHIP TO blocks ----------------
+  const blockY = Math.max(doc.y + 16, titleY + 64);
+  const gap = 14;
+  const colW = (width - gap) / 2;
+  const rcol = left + colW + gap;
+  const barH = 18;
 
-  const billY = headerBottom + 18;
-  doc.fillColor(GRAY).font('Helvetica-Bold').fontSize(9).text('VENDOR / SUPPLIER', left, billY);
-  doc.fillColor('#111').font('Helvetica-Bold').fontSize(11).text(po.supplierName, left, billY + 12, { width: 300 });
-  if (po.notes) {
-    doc.font('Helvetica').fontSize(9).fillColor(GRAY).text(`Notes: ${po.notes}`, left, doc.y + 2, { width: 320 });
-  }
+  doc.rect(left, blockY, colW, barH).fill(BLUE);
+  doc.rect(rcol, blockY, colW, barH).fill(BLUE);
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(10);
+  doc.text('VENDOR', left + 6, blockY + 4);
+  doc.text('SHIP TO', rcol + 6, blockY + 4);
 
-  const cols = {
-    no: { x: left, w: 24 },
-    desc: { x: 74, w: 226 },
-    qty: { x: 300, w: 50 },
-    unit: { x: 350, w: 40 },
-    cost: { x: 390, w: 70 },
-    amount: { x: 460, w: 85 },
+  const detY = blockY + barH + 5;
+  // Vendor (supplier)
+  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(po.supplierName, left + 2, detY, { width: colW - 4 });
+  doc.font('Helvetica').fontSize(9).fillColor(DARK);
+  if (po.supplier?.address) doc.text(po.supplier.address, left + 2, doc.y, { width: colW - 4 });
+  if (po.supplier?.contactNumber) doc.text(po.supplier.contactNumber, left + 2, doc.y, { width: colW - 4 });
+  const vendBottom = doc.y;
+
+  // Ship to (our company)
+  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text(company.name, rcol + 2, detY, { width: colW - 4 });
+  doc.font('Helvetica').fontSize(9).fillColor(DARK);
+  if (company.address) doc.text(company.address, rcol + 2, doc.y, { width: colW - 4 });
+  if (company.telephone) doc.text(company.telephone, rcol + 2, doc.y, { width: colW - 4 });
+  const shipBottom = doc.y;
+
+  // ---------------- Line items table ----------------
+  const cols: Col[] = [
+    { label: 'ITEM', x: left, w: 38, align: 'center' },
+    { label: 'QTY', x: left + 38, w: 42, align: 'center' },
+    { label: 'UOM', x: left + 80, w: 42, align: 'center' },
+    { label: 'DESCRIPTION', x: left + 122, w: 138, align: 'left' },
+    { label: 'BRAND', x: left + 260, w: 95, align: 'left' },
+    { label: 'UNIT PRICE', x: left + 355, w: 70, align: 'right' },
+    { label: 'TOTAL', x: left + 425, w: 70, align: 'right' },
+  ];
+  const cellText = (text: string, c: Col, yy: number) => {
+    const padL = 5;
+    const padR = 5;
+    if (c.align === 'left') doc.text(text, c.x + padL, yy, { width: c.w - padL, align: 'left' });
+    else if (c.align === 'right') doc.text(text, c.x, yy, { width: c.w - padR, align: 'right' });
+    else doc.text(text, c.x, yy, { width: c.w, align: 'center' });
   };
-  let y = Math.max(doc.y + 16, billY + 60);
-  const drawHeader = (yy: number) => {
-    doc.rect(left, yy - 4, right - left, 20).fill(NAVY);
-    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(8.5);
-    doc.text('#', cols.no.x + 3, yy, { width: cols.no.w });
-    doc.text('DESCRIPTION', cols.desc.x, yy, { width: cols.desc.w });
-    doc.text('QTY', cols.qty.x, yy, { width: cols.qty.w, align: 'right' });
-    doc.text('UNIT', cols.unit.x + 4, yy, { width: cols.unit.w });
-    doc.text('UNIT COST', cols.cost.x, yy, { width: cols.cost.w, align: 'right' });
-    doc.text('AMOUNT', cols.amount.x, yy, { width: cols.amount.w, align: 'right' });
+
+  const headH = 20;
+  let tableTop = Math.max(vendBottom, shipBottom) + 16;
+
+  const drawHead = (top: number) => {
+    doc.rect(left, top, width, headH).fill(BLUE);
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8.5);
+    for (const c of cols) cellText(c.label, c, top + 6);
   };
-  drawHeader(y);
-  y += 22;
-  doc.font('Helvetica').fontSize(9).fillColor('#111');
+
+  drawHead(tableTop);
+  let ty = tableTop + headH;
+  const rowLines: number[] = [];
+
+  doc.font('Helvetica').fontSize(9).fillColor(DARK);
   po.items.forEach((it, i) => {
-    if (y > 720) {
+    doc.font('Helvetica').fontSize(9);
+    const descH = doc.heightOfString(it.description || '', { width: cols[3].w - 5 });
+    const rowH = Math.max(18, descH + 8);
+
+    // page break — close the current grid, then continue on a new page
+    if (ty + rowH > 730) {
+      drawGrid(doc, left, right, tableTop, ty, headH, cols, rowLines);
       doc.addPage();
-      y = 60;
-      drawHeader(y);
-      y += 22;
-      doc.font('Helvetica').fontSize(9).fillColor('#111');
+      tableTop = 60;
+      drawHead(tableTop);
+      ty = tableTop + headH;
+      rowLines.length = 0;
+      doc.font('Helvetica').fontSize(9).fillColor(DARK);
     }
-    const rowH = Math.max(16, doc.heightOfString(it.description, { width: cols.desc.w }) + 4);
-    doc.fillColor('#111');
-    doc.text(String(i + 1), cols.no.x + 3, y, { width: cols.no.w });
-    doc.text(it.description, cols.desc.x, y, { width: cols.desc.w });
-    doc.text(amount(it.qty), cols.qty.x, y, { width: cols.qty.w, align: 'right' });
-    doc.text(it.unit, cols.unit.x + 4, y, { width: cols.unit.w });
-    doc.text(amount(it.unitCost), cols.cost.x, y, { width: cols.cost.w, align: 'right' });
-    doc.text(amount(it.lineTotal), cols.amount.x, y, { width: cols.amount.w, align: 'right' });
-    y += rowH;
-    doc.moveTo(left, y - 2).lineTo(right, y - 2).strokeColor(LIGHT).stroke();
+
+    doc.fillColor(DARK).font('Helvetica').fontSize(9);
+    cellText(String(i + 1), cols[0], ty + 5);
+    cellText(qtyText(it.qty), cols[1], ty + 5);
+    cellText((it.unit || '').toUpperCase(), cols[2], ty + 5);
+    cellText(it.description || '', cols[3], ty + 5);
+    cellText(it.brand || '', cols[4], ty + 5);
+    cellText(amount(it.unitCost), cols[5], ty + 5);
+    cellText(amount(it.lineTotal), cols[6], ty + 5);
+
+    ty += rowH;
+    rowLines.push(ty);
   });
 
-  y += 8;
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(NAVY);
-  doc.text('TOTAL', 360, y, { width: 95, align: 'right' });
-  doc.text(money(po.total), 460, y, { width: 85, align: 'right' });
+  // keep a little empty space in the table like the printed form
+  const minRows = 4;
+  if (po.items.length < minRows) {
+    for (let i = po.items.length; i < minRows; i++) {
+      ty += 18;
+      rowLines.push(ty);
+    }
+  }
 
-  const footY = 780;
-  doc.font('Helvetica').fontSize(8).fillColor(GRAY);
-  doc.text(`Prepared by: ${po.createdBy?.fullName ?? '—'}`, left, footY);
-  doc.text(`Approved by: ${po.approvedBy?.fullName ?? '—'}`, left, footY + 11);
-  doc.text(`Payment: ${po.paymentStatus}   |   ${po.received ? 'RECEIVED' : 'Not received'}`, 330, footY + 11, { width: 215, align: 'right' });
+  drawGrid(doc, left, right, tableTop, ty, headH, cols, rowLines);
 
+  // ---------------- Grand total ----------------
+  const y = ty + 12;
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(DARK);
+  doc.text('TOTAL:', cols[5].x - 40, y, { width: cols[5].w + 35, align: 'right' });
+  doc.text(amount(po.total), cols[6].x, y, { width: cols[6].w - 5, align: 'right' });
+
+  // ---------------- Footer note + signatories (pinned near the bottom) ----------------
+  if (doc.y + 40 > 690) doc.addPage();
+
+  doc
+    .font('Helvetica')
+    .fontSize(9)
+    .fillColor(DARK)
+    .text('If you have any question about this Purchase Order, please do not hesitate to call or email us.', left, 695, { width });
+
+  const sigs = [
+    { label: 'Prepared by:', name: po.createdBy?.fullName || company.signatories.prepared.name, title: company.signatories.prepared.title },
+    { label: 'Checked by:', name: company.signatories.checked.name, title: company.signatories.checked.title },
+    { label: 'Noted by:', name: company.signatories.noted.name, title: company.signatories.noted.title },
+    {
+      label: 'Approved by:',
+      name: (po.approvalStatus === 'APPROVED' && po.approvedBy?.fullName) || company.signatories.approved.name,
+      title: company.signatories.approved.title,
+    },
+  ];
+  const sw = width / 4;
+  sigs.forEach((s, i) => {
+    const sx = left + i * sw;
+    doc.font('Helvetica').fontSize(9).fillColor(DARK).text(s.label, sx, 722, { width: sw - 8 });
+    doc.lineWidth(0.7).strokeColor(DARK).moveTo(sx, 756).lineTo(sx + sw - 14, 756).stroke();
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK).text(s.name || ' ', sx, 759, { width: sw - 14 });
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY).text(s.title || '', sx, doc.y, { width: sw - 14 });
+  });
+
+  // Light status watermark for any non-approved copy (printing is normally gated to APPROVED).
   if (po.approvalStatus !== 'APPROVED') {
     doc.save();
     doc.rotate(-45, { origin: [297, 400] });
@@ -122,4 +206,30 @@ export function streamPOPdf(po: PO, res: Response) {
   }
 
   doc.end();
+}
+
+function drawGrid(
+  doc: PDFKit.PDFDocument,
+  left: number,
+  right: number,
+  tableTop: number,
+  bottom: number,
+  headH: number,
+  cols: Col[],
+  rowLines: number[],
+) {
+  doc.lineWidth(0.5).strokeColor(LINE);
+  // outer border
+  doc.rect(left, tableTop, right - left, bottom - tableTop).stroke();
+  // line under the header band
+  doc.moveTo(left, tableTop + headH).lineTo(right, tableTop + headH).stroke();
+  // row separators (skip the last — covered by the outer border)
+  for (let i = 0; i < rowLines.length - 1; i++) {
+    doc.moveTo(left, rowLines[i]).lineTo(right, rowLines[i]).stroke();
+  }
+  // column separators
+  for (let i = 0; i < cols.length - 1; i++) {
+    const vx = cols[i].x + cols[i].w;
+    doc.moveTo(vx, tableTop).lineTo(vx, bottom).stroke();
+  }
 }

@@ -22,11 +22,20 @@ export const env = {
   // Printed on PDF documents (invoices, DRs, POs, vouchers, quotations).
   company: {
     name: process.env.COMPANY_NAME || 'RLR Sales and Services Corporation',
-    address: process.env.COMPANY_ADDRESS || '',
+    address: process.env.COMPANY_ADDRESS || '156 District VI, Mataas na Lupa, Lipa City, Batangas',
     tin: process.env.COMPANY_TIN || '',
     phone: process.env.COMPANY_PHONE || '',
+    telephone: process.env.COMPANY_TELEPHONE || process.env.COMPANY_PHONE || '(043) 773-5124',
+    mobile: process.env.COMPANY_MOBILE || '0917-677-0068 / 0917-147-0123',
     email: process.env.COMPANY_EMAIL || '',
     // Optional path to a PNG/JPEG logo embedded on documents (e.g. ./assets/rlr-logo.png).
     logoPath: process.env.COMPANY_LOGO_PATH || '',
+    // Signatory blocks printed at the bottom of the Purchase Order (overridable via env).
+    signatories: {
+      prepared: { name: process.env.PO_SIGN_PREPARED_NAME || '', title: process.env.PO_SIGN_PREPARED_TITLE || 'Account Executive' },
+      checked: { name: process.env.PO_SIGN_CHECKED_NAME || 'J.L. Aguila', title: process.env.PO_SIGN_CHECKED_TITLE || 'Account Executive' },
+      noted: { name: process.env.PO_SIGN_NOTED_NAME || 'A.M. Robles', title: process.env.PO_SIGN_NOTED_TITLE || 'Sales & Operations Head' },
+      approved: { name: process.env.PO_SIGN_APPROVED_NAME || 'Dra. Haydee J. Rosita', title: process.env.PO_SIGN_APPROVED_TITLE || 'Owner' },
+    },
   },
 };
