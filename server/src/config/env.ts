@@ -33,7 +33,7 @@ export const env = {
     // Signatory blocks printed at the bottom of the Purchase Order (overridable via env).
     signatories: {
       prepared: { name: process.env.PO_SIGN_PREPARED_NAME || '', title: process.env.PO_SIGN_PREPARED_TITLE || 'Account Executive' },
-      checked: { name: process.env.PO_SIGN_CHECKED_NAME || 'J.L. Aguila', title: process.env.PO_SIGN_CHECKED_TITLE || 'Account Executive' },
+      checked: { name: process.env.PO_SIGN_CHECKED_NAME || '', title: process.env.PO_SIGN_CHECKED_TITLE || 'Warehouse' },
       noted: { name: process.env.PO_SIGN_NOTED_NAME || 'A.M. Robles', title: process.env.PO_SIGN_NOTED_TITLE || 'Sales & Operations Head' },
       approved: { name: process.env.PO_SIGN_APPROVED_NAME || 'Dra. Haydee J. Rosita', title: process.env.PO_SIGN_APPROVED_TITLE || 'Owner' },
     },

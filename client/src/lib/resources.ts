@@ -237,6 +237,9 @@ export interface QuotationInput {
   number?: string | null;
   date?: string;
   customerId: string;
+  attention?: string | null;
+  department?: string | null;
+  prNumber?: string | null;
   agentId?: string | null;
   validUntil?: string | null;
   notes?: string | null;

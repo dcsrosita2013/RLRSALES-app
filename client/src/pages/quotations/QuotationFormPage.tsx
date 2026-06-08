@@ -51,6 +51,9 @@ export function QuotationFormPage() {
   const [number, setNumber] = useState('');
   const [date, setDate] = useState(todayStr());
   const [customerId, setCustomerId] = useState('');
+  const [attention, setAttention] = useState('');
+  const [department, setDepartment] = useState('');
+  const [prNumber, setPrNumber] = useState('');
   const [agentId, setAgentId] = useState('');
   const [validUntil, setValidUntil] = useState(addDays(todayStr(), VALIDITY_DAYS));
   const [notes, setNotes] = useState('');
@@ -65,6 +68,9 @@ export function QuotationFormPage() {
         setNumber(qt.number);
         setDate(new Date(qt.date).toISOString().slice(0, 10));
         setCustomerId(qt.customerId);
+        setAttention(qt.attention ?? '');
+        setDepartment(qt.department ?? '');
+        setPrNumber(qt.prNumber ?? '');
         setAgentId(qt.agentId ?? '');
         setValidUntil(qt.validUntil ? new Date(qt.validUntil).toISOString().slice(0, 10) : '');
         setNotes(qt.notes ?? '');
@@ -100,6 +106,9 @@ export function QuotationFormPage() {
       number: number.trim() || null,
       date,
       customerId,
+      attention: attention || null,
+      department: department || null,
+      prNumber: prNumber || null,
       agentId: agentId || null,
       validUntil: validUntil || null,
       notes: notes || null,
@@ -162,6 +171,9 @@ export function QuotationFormPage() {
                 </option>
               ))}
             </Select>
+            <Input label="Attention" value={attention} onChange={(e) => setAttention(e.target.value)} placeholder="Contact person (e.g. Sir Noriel Guno)" />
+            <Input label="Department" value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Optional" />
+            <Input label="PR Number" value={prNumber} onChange={(e) => setPrNumber(e.target.value)} placeholder="N/A if none" />
           </div>
         </Card>
 

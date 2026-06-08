@@ -24,6 +24,9 @@ export interface QuotationInput {
   number?: string | null;
   date?: string | Date | null;
   customerId: string;
+  attention?: string | null;
+  department?: string | null;
+  prNumber?: string | null;
   agentId?: string | null;
   validUntil?: string | Date | null;
   notes?: string | null;
@@ -35,8 +38,8 @@ const toNum = (d: Prisma.Decimal | number | null | undefined): number =>
   d == null ? 0 : typeof d === 'number' ? d : Number(d);
 
 const include = {
-  items: true,
-  customer: { select: { id: true, name: true } },
+  items: { include: { product: { select: { brand: { select: { name: true } } } } } },
+  customer: { select: { id: true, name: true, address: true, tin: true, contactNumber: true, vatClass: true, termsType: true, netDays: true } },
   agent: { select: { id: true, name: true } },
   createdBy: { select: { id: true, fullName: true } },
 } satisfies Prisma.QuotationInclude;
@@ -50,7 +53,21 @@ export function serializeQuotation(q: QWithRelations) {
     date: q.date,
     customerId: q.customerId,
     customerName: q.customerName,
-    customer: q.customer ? { id: q.customer.id, name: q.customer.name } : null,
+    attention: q.attention,
+    department: q.department,
+    prNumber: q.prNumber,
+    customer: q.customer
+      ? {
+          id: q.customer.id,
+          name: q.customer.name,
+          address: q.customer.address,
+          tin: q.customer.tin,
+          contactNumber: q.customer.contactNumber,
+          vatClass: q.customer.vatClass,
+          termsType: q.customer.termsType,
+          netDays: q.customer.netDays,
+        }
+      : null,
     agentId: q.agentId,
     agent: q.agent ? { id: q.agent.id, name: q.agent.name } : null,
     validUntil: q.validUntil,
@@ -64,6 +81,7 @@ export function serializeQuotation(q: QWithRelations) {
       id: it.id,
       productId: it.productId,
       description: it.description,
+      brand: it.product?.brand?.name ?? '',
       qty: toNum(it.qty),
       unit: it.unit,
       markupOption: it.markupOption,
@@ -115,6 +133,9 @@ export async function createQuotation(input: QuotationInput, actor: Actor) {
         date: input.date ? new Date(input.date) : new Date(),
         customerId: customer.id,
         customerName: customer.name,
+        attention: input.attention ?? null,
+        department: input.department ?? null,
+        prNumber: input.prNumber ?? null,
         agentId: input.agentId ?? null,
         validUntil: input.validUntil ? new Date(input.validUntil) : null,
         notes: input.notes ?? null,
@@ -122,12 +143,13 @@ export async function createQuotation(input: QuotationInput, actor: Actor) {
         createdById: actor.id,
         items: { create: lines },
       },
-      include,
     });
     await writeAudit({ userId: actor.id, username: actor.username, action: 'CREATE', entityType: 'Quotation', entityId: q.id, details: { number } }, tx);
     return q;
   });
-  return serializeQuotation(created);
+  // Re-read with relations OUTSIDE the transaction (deep include inside an interactive
+  // transaction on the connection pooler triggers Prisma P2028).
+  return getQuotation(created.id);
 }
 
 export async function updateQuotation(id: string, input: QuotationInput, actor: Actor) {
@@ -135,7 +157,7 @@ export async function updateQuotation(id: string, input: QuotationInput, actor: 
   if (existing.convertedInvoiceId) throw new ApiError(400, 'This quotation was already converted to an invoice and cannot be edited');
   const customer = await prisma.customer.findUnique({ where: { id: input.customerId } });
   if (!customer) throw new ApiError(400, 'Customer not found');
-  const updated = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     const lines = await buildLines(tx, input.items);
     await tx.quotation.update({
       where: { id },
@@ -144,6 +166,9 @@ export async function updateQuotation(id: string, input: QuotationInput, actor: 
         date: input.date ? new Date(input.date) : existing.date,
         customerId: customer.id,
         customerName: customer.name,
+        attention: input.attention ?? null,
+        department: input.department ?? null,
+        prNumber: input.prNumber ?? null,
         agentId: input.agentId ?? null,
         validUntil: input.validUntil ? new Date(input.validUntil) : null,
         notes: input.notes ?? null,
@@ -152,9 +177,8 @@ export async function updateQuotation(id: string, input: QuotationInput, actor: 
       },
     });
     await writeAudit({ userId: actor.id, username: actor.username, action: 'UPDATE', entityType: 'Quotation', entityId: id }, tx);
-    return tx.quotation.findUnique({ where: { id }, include });
   });
-  return serializeQuotation(updated!);
+  return getQuotation(id);
 }
 
 export async function deleteQuotation(id: string, actor: Actor) {

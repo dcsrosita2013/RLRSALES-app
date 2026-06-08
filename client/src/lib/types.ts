@@ -303,6 +303,9 @@ export interface Quotation {
   date: string;
   customerId: string;
   customerName: string;
+  attention: string | null;
+  department: string | null;
+  prNumber: string | null;
   customer: { id: string; name: string } | null;
   agentId: string | null;
   agent: { id: string; name: string } | null;

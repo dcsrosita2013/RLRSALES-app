@@ -149,12 +149,13 @@ export async function createPO(input: POInput, actor: Actor) {
         createdById: actor.id,
         items: { create: lines },
       },
-      include: poInclude,
     });
     await writeAudit({ userId: actor.id, username: actor.username, action: 'CREATE', entityType: 'PurchaseOrder', entityId: po.id, details: { number } }, tx);
     return po;
   });
-  return serializePO(created);
+  // Re-read with relations OUTSIDE the transaction (a deep include inside an interactive
+  // transaction on the connection pooler triggers Prisma P2028).
+  return getPO(created.id);
 }
 
 export async function updatePO(id: string, input: POInput, actor: Actor) {
@@ -167,7 +168,7 @@ export async function updatePO(id: string, input: POInput, actor: Actor) {
   const supplier = await prisma.supplier.findUnique({ where: { id: input.supplierId } });
   if (!supplier) throw new ApiError(400, 'Supplier not found');
 
-  const updated = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     const lines = await buildLines(tx, input.items);
     const totals = computeTotals(lines);
     // Editing a rejected PO re-submits it for approval.
@@ -188,9 +189,8 @@ export async function updatePO(id: string, input: POInput, actor: Actor) {
       },
     });
     await writeAudit({ userId: actor.id, username: actor.username, action: 'UPDATE', entityType: 'PurchaseOrder', entityId: id }, tx);
-    return tx.purchaseOrder.findUnique({ where: { id }, include: poInclude });
   });
-  return serializePO(updated!);
+  return getPO(id);
 }
 
 export async function approvePO(id: string, actor: Actor) {
@@ -222,7 +222,7 @@ export async function receivePO(id: string, actor: Actor) {
   if (existing.approvalStatus !== 'APPROVED') throw new ApiError(400, 'Only an approved PO can be received');
   if (existing.received) throw new ApiError(400, 'This PO has already been received');
 
-  const updated = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     for (const it of existing.items) {
       if (!it.productId || toNum(it.qty) <= 0) continue;
       const floor: Floor = it.floor ?? 'FIRST';
@@ -250,9 +250,8 @@ export async function receivePO(id: string, actor: Actor) {
     }
     await tx.purchaseOrder.update({ where: { id }, data: { received: true, receivedAt: new Date() } });
     await writeAudit({ userId: actor.id, username: actor.username, action: 'RECEIVE', entityType: 'PurchaseOrder', entityId: id }, tx);
-    return tx.purchaseOrder.findUnique({ where: { id }, include: poInclude });
   });
-  return serializePO(updated!);
+  return getPO(id);
 }
 
 export async function setPOPayment(id: string, paid: boolean, actor: Actor) {

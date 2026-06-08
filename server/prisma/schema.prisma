@@ -442,6 +442,9 @@ model Quotation {
   customerId         String
   customer           Customer  @relation(fields: [customerId], references: [id])
   customerName       String
+  attention          String? // contact person ("Attention: ...")
+  department         String?
+  prNumber           String? // customer's PR / reference number
   agentId            String?
   agent              Agent?    @relation(fields: [agentId], references: [id])
   validUntil         DateTime?
