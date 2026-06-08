@@ -127,9 +127,11 @@ export function PODetailPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={printPdf}>
-            <Printer className="h-4 w-4" /> Print
-          </Button>
+          {isApproved && (
+            <Button variant="secondary" onClick={printPdf}>
+              <Printer className="h-4 w-4" /> Print
+            </Button>
+          )}
           {canEdit && (
             <Button variant="secondary" onClick={() => navigate(`/purchase-orders/${po.id}/edit`)}>
               <Pencil className="h-4 w-4" /> Edit

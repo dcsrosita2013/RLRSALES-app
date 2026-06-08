@@ -27,6 +27,16 @@ interface Line {
 let keyCounter = 1;
 const newLine = (): Line => ({ key: keyCounter++, productId: '', description: '', qty: '1', unit: 'pc', unitPrice: '', markupOption: '' });
 
+// Quotations are valid for 15 days by default.
+const VALIDITY_DAYS = 15;
+const todayStr = () => new Date().toISOString().slice(0, 10);
+function addDays(dateStr: string, n: number): string {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 export function QuotationFormPage() {
   const { id } = useParams();
   const editing = Boolean(id);
@@ -39,10 +49,10 @@ export function QuotationFormPage() {
 
   const [loading, setLoading] = useState(editing);
   const [number, setNumber] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayStr());
   const [customerId, setCustomerId] = useState('');
   const [agentId, setAgentId] = useState('');
-  const [validUntil, setValidUntil] = useState('');
+  const [validUntil, setValidUntil] = useState(addDays(todayStr(), VALIDITY_DAYS));
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<Line[]>([newLine()]);
   const [saving, setSaving] = useState(false);
@@ -131,8 +141,11 @@ export function QuotationFormPage() {
               <Input label="Quotation #" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Auto-generated if blank" />
               <p className="mt-1 text-xs text-slate-500">Type your own or leave blank.</p>
             </div>
-            <Input label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            <Input label="Valid until" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+            <Input label="Date" type="date" value={date} onChange={(e) => { setDate(e.target.value); if (e.target.value) setValidUntil(addDays(e.target.value, VALIDITY_DAYS)); }} />
+            <div>
+              <Input label="Valid until" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+              <p className="mt-1 text-xs text-slate-500">Defaults to 15 days from the date.</p>
+            </div>
             <Select label="Customer" value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
               <option value="">Select customer…</option>
               {customers.map((c) => (

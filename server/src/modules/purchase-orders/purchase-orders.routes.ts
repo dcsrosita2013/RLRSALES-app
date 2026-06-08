@@ -1,6 +1,6 @@
 import { Router, Request } from 'express';
 import { z } from 'zod';
-import { asyncHandler } from '../../middleware/error';
+import { asyncHandler, ApiError } from '../../middleware/error';
 import { requireRole } from '../../middleware/rbac';
 import { requiredString, optionalString, nonNegativeNumber } from '../../lib/validation';
 import * as svc from './purchase-orders.service';
@@ -62,6 +62,9 @@ router.get('/:id', VIEW, asyncHandler(async (req, res) => {
 
 router.get('/:id/pdf', VIEW, asyncHandler(async (req, res) => {
   const po = await svc.getPO(req.params.id);
+  if (po.approvalStatus !== 'APPROVED') {
+    throw new ApiError(400, 'This purchase order must be approved before it can be printed.');
+  }
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="po-${po.number}.pdf"`);
   streamPOPdf(po, res);
