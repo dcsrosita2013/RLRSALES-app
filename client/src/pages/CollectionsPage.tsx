@@ -200,6 +200,12 @@ function RecordCollection({
             ))}
           </Select>
         </div>
+        <Input
+          label="OR / Receipt #"
+          value={form.number ?? ''}
+          onChange={(e) => setForm({ ...form, number: e.target.value })}
+          placeholder="Your official receipt number — leave blank to auto-generate (COL-…)"
+        />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Input label="Amount (₱)" type="number" step="0.01" min={0} value={amountStr} onChange={(e) => setAmountStr(e.target.value)} required />
           <Input label="Date" type="date" value={form.date ?? ''} onChange={(e) => setForm({ ...form, date: e.target.value })} />
