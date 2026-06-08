@@ -97,6 +97,7 @@ model User {
   agentId            String?
   agent              Agent?   @relation(fields: [agentId], references: [id])
   lastLoginAt        DateTime?
+  signature          String?  // base64 data URL of the user's e-signature (printed on PO "Prepared by")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

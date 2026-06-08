@@ -35,3 +35,16 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
   const result = await authService.changePassword(req.user.id, currentPassword, newPassword);
   res.json(result);
 });
+
+export const getSignature = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw new ApiError(401, 'Authentication required');
+  res.json(await authService.getMySignature(req.user.id));
+});
+
+const signatureSchema = z.object({ signature: z.string().nullable() });
+
+export const setSignature = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw new ApiError(401, 'Authentication required');
+  const { signature } = signatureSchema.parse(req.body);
+  res.json(await authService.setMySignature(req.user.id, signature));
+});

@@ -20,6 +20,20 @@ function termsText(po: PO): string {
   return 'COD';
 }
 
+// Decode a base64 data-URL e-signature into a Buffer for pdfkit (returns null if absent/invalid).
+function decodeSignature(dataUrl: string | null | undefined): Buffer | null {
+  if (!dataUrl) return null;
+  const trimmed = dataUrl.trim();
+  const match = /^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/.exec(trimmed);
+  const b64 = match ? match[1] : trimmed;
+  try {
+    const buf = Buffer.from(b64, 'base64');
+    return buf.length > 0 ? buf : null;
+  } catch {
+    return null;
+  }
+}
+
 interface Col {
   label: string;
   x: number;
@@ -177,20 +191,30 @@ export function streamPOPdf(po: PO, res: Response) {
     .fillColor(DARK)
     .text('If you have any question about this Purchase Order, please do not hesitate to call or email us.', left, 695, { width });
 
-  const sigs = [
-    { label: 'Prepared by:', name: po.createdBy?.fullName || company.signatories.prepared.name, title: company.signatories.prepared.title },
-    { label: 'Checked by:', name: company.signatories.checked.name, title: company.signatories.checked.title },
-    { label: 'Noted by:', name: company.signatories.noted.name, title: company.signatories.noted.title },
+  const sigs: { label: string; name: string; title: string; signature: string | null }[] = [
+    { label: 'Prepared by:', name: po.createdBy?.fullName || company.signatories.prepared.name, title: company.signatories.prepared.title, signature: po.createdBy?.signature ?? null },
+    { label: 'Checked by:', name: company.signatories.checked.name, title: company.signatories.checked.title, signature: null },
+    { label: 'Noted by:', name: company.signatories.noted.name, title: company.signatories.noted.title, signature: null },
     {
       label: 'Approved by:',
       name: (po.approvalStatus === 'APPROVED' && po.approvedBy?.fullName) || company.signatories.approved.name,
       title: company.signatories.approved.title,
+      signature: null,
     },
   ];
   const sw = width / 4;
   sigs.forEach((s, i) => {
     const sx = left + i * sw;
     doc.font('Helvetica').fontSize(9).fillColor(DARK).text(s.label, sx, 722, { width: sw - 8 });
+    // e-signature image sits just above the signature line
+    const sigBuf = decodeSignature(s.signature);
+    if (sigBuf) {
+      try {
+        doc.image(sigBuf, sx + 2, 728, { fit: [sw - 18, 26], align: 'center', valign: 'bottom' });
+      } catch {
+        /* ignore unreadable signature image */
+      }
+    }
     doc.lineWidth(0.7).strokeColor(DARK).moveTo(sx, 756).lineTo(sx + sw - 14, 756).stroke();
     doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK).text(s.name || ' ', sx, 759, { width: sw - 14 });
     doc.font('Helvetica').fontSize(8).fillColor(GRAY).text(s.title || '', sx, doc.y, { width: sw - 14 });

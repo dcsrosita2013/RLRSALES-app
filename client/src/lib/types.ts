@@ -8,6 +8,7 @@ export interface AuthUser {
   mustChangePassword: boolean;
   agentId: string | null;
   isActive: boolean;
+  hasSignature?: boolean;
 }
 
 export const ROLE_LABELS: Record<Role, string> = {

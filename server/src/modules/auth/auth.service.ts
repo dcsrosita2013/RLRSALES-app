@@ -14,6 +14,7 @@ function publicUser(user: User) {
     mustChangePassword: user.mustChangePassword,
     agentId: user.agentId,
     isActive: user.isActive,
+    hasSignature: Boolean(user.signature),
   };
 }
 
@@ -75,4 +76,31 @@ export async function changePassword(userId: string, currentPassword: string, ne
     entityId: user.id,
   });
   return { ok: true };
+}
+
+// The signing user's own e-signature (base64 data URL), used on PO "Prepared by".
+export async function getMySignature(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { signature: true } });
+  if (!user) throw new ApiError(404, 'User not found');
+  return { signature: user.signature ?? null };
+}
+
+export async function setMySignature(userId: string, signature: string | null) {
+  const value = signature && signature.trim() ? signature.trim() : null;
+  if (value && value.length > 700_000) {
+    throw new ApiError(400, 'Signature image is too large — please use a smaller / simpler image');
+  }
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { signature: value },
+    select: { username: true, signature: true },
+  });
+  await writeAudit({
+    userId,
+    username: updated.username,
+    action: value ? 'SET_SIGNATURE' : 'CLEAR_SIGNATURE',
+    entityType: 'User',
+    entityId: userId,
+  });
+  return { hasSignature: Boolean(updated.signature) };
 }

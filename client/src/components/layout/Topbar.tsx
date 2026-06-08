@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Menu, ChevronDown, KeyRound, LogOut } from 'lucide-react';
+import { Menu, ChevronDown, KeyRound, LogOut, PenLine } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLE_LABELS } from '../../lib/types';
 
@@ -62,6 +62,15 @@ export function Topbar({ onMenu, title = 'Dashboard' }: { onMenu: () => void; ti
               <p className="text-sm font-medium text-slate-800">@{user?.username}</p>
               <p className="text-xs text-slate-500">{user ? ROLE_LABELS[user.role] : ''}</p>
             </div>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                navigate('/my-signature');
+              }}
+              className="flex w-full items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <PenLine className="h-4 w-4" /> My signature
+            </button>
             <button
               onClick={() => {
                 setMenuOpen(false);

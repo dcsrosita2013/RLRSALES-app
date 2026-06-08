@@ -37,7 +37,7 @@ const toNum = (d: Prisma.Decimal | number | null | undefined): number =>
 const poInclude = {
   items: { include: { product: { select: { brand: { select: { name: true } } } } } },
   supplier: { select: { id: true, name: true, address: true, contactNumber: true, tin: true } },
-  createdBy: { select: { id: true, fullName: true } },
+  createdBy: { select: { id: true, fullName: true, signature: true } },
   approvedBy: { select: { id: true, fullName: true } },
 } satisfies Prisma.PurchaseOrderInclude;
 
@@ -98,7 +98,7 @@ export function serializePO(po: POWithRelations) {
     paidAt: po.paidAt,
     received: po.received,
     receivedAt: po.receivedAt,
-    createdBy: po.createdBy ? { id: po.createdBy.id, fullName: po.createdBy.fullName } : null,
+    createdBy: po.createdBy ? { id: po.createdBy.id, fullName: po.createdBy.fullName, signature: po.createdBy.signature ?? null } : null,
     createdAt: po.createdAt,
     items: po.items.map((it) => ({
       id: it.id,

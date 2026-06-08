@@ -24,6 +24,7 @@ import { CollectionsPage } from './pages/CollectionsPage';
 import { CheckVouchersPage } from './pages/CheckVouchersPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { MySignaturePage } from './pages/MySignaturePage';
 
 export default function App() {
   return (
@@ -225,6 +226,7 @@ export default function App() {
           }
         />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/my-signature" element={<MySignaturePage />} />
         <Route
           path="/settings"
           element={
