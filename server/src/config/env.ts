@@ -22,7 +22,7 @@ export const env = {
   // Printed on PDF documents (invoices, DRs, POs, vouchers, quotations).
   company: {
     name: process.env.COMPANY_NAME || 'RLR Sales and Services Corporation',
-    address: process.env.COMPANY_ADDRESS || '156 District VI, Mataas na Lupa, Lipa City, Batangas',
+    address: process.env.COMPANY_ADDRESS || '156 Mataas na Lupa, Lipa City, Batangas',
     tin: process.env.COMPANY_TIN || '',
     phone: process.env.COMPANY_PHONE || '',
     telephone: process.env.COMPANY_TELEPHONE || process.env.COMPANY_PHONE || '(043) 773-5124',
