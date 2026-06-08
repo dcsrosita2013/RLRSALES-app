@@ -1,11 +1,12 @@
 import PDFDocument from 'pdfkit';
-import fs from 'node:fs';
-import path from 'node:path';
 import { Response } from 'express';
 import { env } from '../../config/env';
+import { RLR_LOGO_PNG_BASE64 } from '../../lib/logo';
 import type { serializeQuotation } from './quotations.service';
 
 type Quotation = ReturnType<typeof serializeQuotation>;
+
+const RLR_LOGO = Buffer.from(RLR_LOGO_PNG_BASE64, 'base64');
 
 const BLUE = '#2f6cb0';
 const DARK = '#111111';
@@ -50,20 +51,19 @@ export function streamQuotationPdf(q: Quotation, res: Response) {
   const width = right - left; // 495
   const company = env.company;
 
-  // ---------------- Header: logo (left) + company details (centered) ----------------
-  const logoPath = company.logoPath ? path.resolve(process.cwd(), company.logoPath) : '';
-  if (logoPath && fs.existsSync(logoPath)) {
-    try {
-      doc.image(logoPath, left, 36, { fit: [72, 72] });
-    } catch {
-      /* ignore bad logo */
-    }
+  // ---------------- Header: logo (left) + company details (centered beside it) ----------------
+  try {
+    doc.image(RLR_LOGO, left, 34, { fit: [62, 62] });
+  } catch {
+    /* ignore logo render failure */
   }
-  doc.fillColor(DARK).font('Helvetica-Bold').fontSize(17).text(company.name, left, 40, { width, align: 'center' });
-  doc.font('Helvetica').fontSize(9).fillColor(DARK);
-  if (company.address) doc.text(company.address, left, doc.y + 1, { width, align: 'center' });
-  if (company.telephone) doc.text(`Telephone Nos: ${company.telephone}`, left, doc.y, { width, align: 'center' });
-  if (company.mobile) doc.text(`Mobile Nos: ${company.mobile}`, left, doc.y, { width, align: 'center' });
+  const hX = left + 72;
+  const hW = right - hX;
+  doc.fillColor(DARK).font('Times-Bold').fontSize(19).text(company.name, hX, 38, { width: hW, align: 'center' });
+  doc.font('Times-Roman').fontSize(9.5).fillColor(DARK);
+  if (company.address) doc.text(company.address, hX, doc.y + 2, { width: hW, align: 'center' });
+  if (company.telephone) doc.text(`Telephone Nos: ${company.telephone}`, hX, doc.y, { width: hW, align: 'center' });
+  if (company.mobile) doc.text(`Mobile Nos: ${company.mobile}`, hX, doc.y, { width: hW, align: 'center' });
 
   // ---------------- Blue title bar ----------------
   const barY = doc.y + 12;
